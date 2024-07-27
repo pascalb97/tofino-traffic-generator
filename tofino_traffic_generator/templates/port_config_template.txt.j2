@@ -1,0 +1,10 @@
+ucli
+pm
+port-add {{ port }}/- {{ port_bw }} NONE
+port-enb {{ port }}/-
+an-set {{ port }}/- 2
+port-dis {{ port }}/-
+port-enb {{ port }}/-
+show
+exit
+exit

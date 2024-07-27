@@ -1,0 +1,14 @@
+#! /usr/bin/env bash
+
+set -e -o pipefail
+
+mkdir -p {{ project_dir }}/build;
+cd {{ project_dir }}/build
+
+cmake {{ sde_path }}/p4studio \
+    -DCMAKE_INSTALL_PREFIX={{ sde_install_path }} \
+    -DCMAKE_MODULE_PATH={{ sde_path }}/cmake \
+    -DP4_NAME=traffic_gen \
+    -DP4_PATH=$(realpath {{ project_dir }}/traffic_gen.p4)
+
+make && make install
