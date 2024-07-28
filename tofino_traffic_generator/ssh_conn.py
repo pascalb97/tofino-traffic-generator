@@ -1,12 +1,12 @@
 import os
 import warnings
 from cryptography.utils import CryptographyDeprecationWarning
-
-# Supress warning because of this issue https://github.com/paramiko/paramiko/issues/2419
-with warnings.catch_warnings(action="ignore", category=CryptographyDeprecationWarning):
-    import paramiko
 import hashlib
 import time
+
+# Supress warning because of this issue https://github.com/paramiko/paramiko/issues/2419
+warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
+import paramiko
 
 
 class SSHCommandExecutionError(Exception):
