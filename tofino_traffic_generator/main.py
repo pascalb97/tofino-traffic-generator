@@ -172,7 +172,7 @@ def main():
         traffic_configuration.pkt_len,
         traffic_configuration.packet_buffer_offset,
     )
-
+    input("[*] Press Enter to continue...")
     print(
         f"[+] Running traffic generator for {traffic_configuration.generation_time_s} seconds..."
     )

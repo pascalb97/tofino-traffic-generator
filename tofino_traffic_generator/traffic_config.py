@@ -81,7 +81,7 @@ class TrafficConfigurator:
         # self.name = name
         self.virtual_switch = virtual_switch
         self.p4_code = ""
-        self.output_physical_port = 1
+        self.output_physical_port = None
         self.output_virtual_port = 1
         self.channel = 0
         self.port_speed = ""
@@ -331,4 +331,5 @@ class TrafficConfigurator:
             self.udp_defined,
             self.tcp_defined,
         )
-        generate_port_config(self.output_physical_port, self.port_speed)
+        if self.output_physical_port:
+            generate_port_config(self.output_physical_port, self.port_speed)
