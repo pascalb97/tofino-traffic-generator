@@ -128,9 +128,6 @@ header pkt_gen_t {
     bit<16> pkt_id;
 }
 
-// Customized headers (if exist)
-
-
 struct empty_header_t {}
 
 struct empty_metadata_t {}

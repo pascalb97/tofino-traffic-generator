@@ -131,15 +131,6 @@ header pkt_gen_t {
     bit<16> pkt_id;
 }
 
-// Customized headers (if exist)
-{% for hdr in header_list %}
-header {{ hdr.name }}_h {
-    {% for field in hdr.fields %}
-    bit<{{ field.size }}> {{ field.name }};
-    {% endfor %}
-}
-{% endfor %}
-
 struct empty_header_t {}
 
 struct empty_metadata_t {}

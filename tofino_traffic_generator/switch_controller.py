@@ -78,8 +78,8 @@ class GRPCManager:
         hostname="localhost",
         grpc_port=50052,
         ssh_client=None,
-        device_id=None,
-        client_id=None,
+        device_id=0,
+        client_id=0,
     ):
         self.hostname = hostname
         self.grpc_port = grpc_port
@@ -169,12 +169,13 @@ class TofinoSwitch:
     COMMAND_EXECUTION_ERROR = "[ERROR] Error executing command: {}"
     ENV_VAR_NOT_FOUND_ERROR = "[ERROR] Environment variable {} not found"
 
-    def __init__(self, ssh_client):
+    def __init__(self, ssh_client, virtual_switch=True):
         self.ssh_client = ssh_client
+        self.virtual_switch = virtual_switch
 
     def fetch_env_var(self, var_name):
         stdin, stdout, stderr = ssh_exec(
-            self.ssh_client, f". .profile ; echo ${var_name}"
+            self.ssh_client, f". .profile > /dev/null ; echo ${var_name}"
         )
         error_message = stderr.read().decode("ascii").strip()
         if error_message:
@@ -313,14 +314,21 @@ class TofinoSwitch:
     def start_tofino_model(self, program_name, remote_env_vars):
         return ssh_exec(
             self.ssh_client,
-            f". .profile ; nohup /bin/bash {remote_env_vars['SDE']}/run_tofino_model.sh"
+            f". .profile > /dev/null ; nohup /bin/bash {remote_env_vars['SDE']}/run_tofino_model.sh"
             f" -p {program_name} -f /tmp/{program_name}/ports.json > /dev/null 2>&1 &",
         )
 
     def start_bfswitch(self, program_name, remote_env_vars):
         return ssh_exec(
             self.ssh_client,
-            f". .profile ; nohup /bin/bash {remote_env_vars['SDE']}/run_switchd.sh -p {program_name} > /dev/null 2>&1 &",
+            f". .profile > /dev/null ; nohup /bin/bash {remote_env_vars['SDE']}/run_switchd.sh"
+            f" -p {program_name} > /dev/null 2>&1 &",
+        )
+
+    def start_bfshell(self, remote_env_vars):
+        return ssh_exec(
+            self.ssh_client,
+            f". .profile > /dev/null ; /bin/bash {remote_env_vars['SDE']}/run_bfshell.sh -f test_config.txt",
         )
 
     def stop_tofino_model(self):
@@ -371,10 +379,50 @@ class TofinoSwitch:
             print("[!] P4 source has not changed, skipped compilation step.")
             return False
 
-    def setup_virtual_interfaces(self, remote_env_vars, project_dir):
-        print("[+] Setting up virtual ports")
-        self.tofino_model_port_setup(remote_env_vars, 64)
-        self.write_port_to_veth_json(project_dir, 64)
+    def get_phy_port_list(self, bfshell_show_output):
+        start_marker = "bf-sde.pm> show"
+        end_marker = "bf-sde.pm> exit"
+        display = False
+        lines = []
+        for line in bfshell_show_output:
+            if start_marker in line:
+                display = True
+                continue
+            if end_marker in line:
+                display = False
+                break
+            if display:
+                lines.append(line.strip())
+        return lines
+
+    def parse_phy_port_list(self, raw_port_table):
+        headers = [header.strip() for header in raw_port_table[1].split("|")]
+        data = []
+        for line in raw_port_table[2:]:  # Skip the header and separator lines
+            if line.strip() == "" or line.startswith("-----"):
+                continue  # Skip empty lines or separator lines
+            values = [value.strip() for value in line.split("|")]
+            entry = dict(zip(headers, values))
+            data.append(entry)
+
+        return data
+
+    def setup_interfaces(self, remote_env_vars, project_dir):
+        if self.virtual_switch:
+            print("[+] Setting up virtual ports")
+            self.tofino_model_port_setup(remote_env_vars, 64)
+            self.write_port_to_veth_json(project_dir, 64)
+        else:
+            print("[+] Setting up physical ports")
+            scp_put(self.ssh_client, "src/port_config.txt", "/tmp/port_config.txt")
+            stdin, stdout, stderr = ssh_exec(
+                self.ssh_client,
+                f". .profile > /dev/null ; /bin/bash {remote_env_vars['SDE']}/run_bfshell.sh"
+                f" -f /tmp/port_config.txt",
+            )
+            raw_port_table = self.get_phy_port_list(stdout.readlines())
+            self.phy_port_table = self.parse_phy_port_list(raw_port_table)
+            ssh_exec(self.ssh_client, "sudo rm -f /tmp/port_config.txt")
 
     def handle_processes(
         self, process_names, program_name, remote_env_vars, source_changed
@@ -387,9 +435,10 @@ class TofinoSwitch:
             for process in killed_processes:
                 print(f"[-] Killed {process}")
             time.sleep(3)
-            print("[*] Starting tofino model...")
-            self.start_tofino_model(program_name, remote_env_vars)
-            time.sleep(3)
+            if self.virtual_switch:
+                print("[*] Starting tofino model...")
+                self.start_tofino_model(program_name, remote_env_vars)
+                time.sleep(3)
             print("[*] Starting bf_switch...")
             self.start_bfswitch(program_name, remote_env_vars)
 
@@ -399,6 +448,7 @@ class TrafficGenerator:
         self.bfrt_info = bfrt_info
         self.bfrt_helper = bfrt_helper
         self.grpc_client = grpc_client
+        self.phy_port_table = []
 
     def fix_bfrt_input(self, val, type_info, bitwidth=None):
         if "uint" in type_info or "byte" in type_info:

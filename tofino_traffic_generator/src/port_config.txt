@@ -1,10 +1,11 @@
 ucli
 pm
-port-add 5/- 100G NONE
-port-enb 5/-
-an-set 5/- 2
-port-dis 5/-
-port-enb 5/-
+port-del 1/-
+port-add 1/-  NONE
+port-enb 1/-
+an-set 1/- 2
+port-dis 1/-
+port-enb 1/-
 show
 exit
 exit
