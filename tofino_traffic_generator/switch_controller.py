@@ -178,7 +178,10 @@ class TofinoSwitch:
             self.ssh_client, f". .profile > /dev/null ; echo ${var_name}"
         )
         error_message = stderr.read().decode("ascii").strip()
-        if error_message:
+        if (
+            error_message
+            and "insmod: ERROR: could not insert module" not in error_message
+        ):
             raise Exception(
                 self.COMMAND_EXECUTION_ERROR.format(var_name, error_message)
             )
