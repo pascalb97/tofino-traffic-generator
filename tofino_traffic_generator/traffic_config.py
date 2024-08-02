@@ -38,7 +38,6 @@ def initialize_src():
 def generate_p4(throughput_defined, throughput_mode, traffic_configurator):
     template_data = {
         "throughput_defined": throughput_defined,
-        "throughput_mode": throughput_mode,
         "traffic_gen": traffic_configurator,
     }
     template_to_file(

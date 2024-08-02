@@ -17,14 +17,11 @@ struct headers {
     tcp_h tcp;
     udp_h udp;
 {%- endif %}
-{%- for hd in traffic_gen.headers %}
-    {{ hd.name }}_h {{ hd.name }};
-{%- endfor %}
     pkt_gen_t pkt_gen;
 }
 
 struct ingress_metadata_t {
-        bit<32> src_mask;
+    bit<32> src_mask;
     bit<32> dst_mask;
 }
 struct egress_metadata_t {}
@@ -102,11 +99,6 @@ control SwitchIngress(
     inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
     inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
 
-{%- if throughput_defined and throughput_mode == "meter" %}
-    Meter<bit<10>>(10, MeterType_t.BYTES) meter;
-    bit<2> color = 0;
-{%- endif %}
-
     action drop() {
         ig_dprsr_md.drop_ctl = 0x1;
     }
@@ -148,10 +140,6 @@ control SwitchIngress(
     }
 
     apply {
-    {%- for hd in traffic_gen.headers %}
-        hdr.{{ hd.name }}.setValid();
-    {%- endfor %}
-
         if (hdr.timer.isValid()) {
             t.apply();
         } else if (hdr.port_down.isValid()) {
