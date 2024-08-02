@@ -125,3 +125,6 @@ pyrightconfig.json
 
 # pycharm
 .idea/
+
+# Logging
+log.txt
