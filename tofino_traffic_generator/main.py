@@ -1,10 +1,16 @@
 import os
+import time
+import threading
+from tabulate import tabulate
 from ssh_conn import ssh_conn
 from switch_controller import TofinoSwitch, TrafficGenerator, GRPCManager
 from traffic_config import TrafficConfigurator
 from bfrt_helper.fields import DevPort, PortId
 from bfrt_helper.match import Exact
-
+from bfrt_helper.bfrt import BfRtHelper, BfRtInfo, make_port_map
+import bfrt_helper.pb2.bfruntime_pb2 as bfruntime_pb2
+import bfrt_helper.pb2.bfruntime_pb2_grpc as bfruntime_pb2_grpc
+from pprint import pprint
 # import logging
 
 
@@ -24,40 +30,54 @@ os.environ["GRPC_VERBOSITY"] = "NONE"
 # _LOGGER = logging.getLogger(__name__)
 # _LOGGER.setLevel(logging.INFO)
 
+def port_metrics_table(metrics, packet_length):
+    table = []
+    for i, time in enumerate(metrics["time_s"]):
+        mpps = (metrics["$FramesTransmittedOK"][i]/1.0e6)/time
+        mbps = ((metrics["$FramesTransmittedOK"][i] * 8 * packet_length) / 1.0e6) / time
+        table.append([i, time, metrics["$FramesTransmittedOK"][i], mpps, mbps])
+
+    return tabulate(table, headers=["n", "time_s", "total_frames_tx", "Mpps", "Mbps"])
+
 
 def main():
     # TODO: Change local/remote logic
 
-    hostname = "192.168.178.68"
-    username = "vagrant"
+    hostname = "172.16.1.11"
+    username = "p4-user"
+    password = "htw-p4-user"
     program_name = "traffic_gen"
     grpc_port = 50052
     keyfile = "/Users/pascal/.ssh/tofinovm_key"
-    ssh_port = 2222
+    ssh_port = 22
 
-    virtual_switch = True
+    virtual_switch = False
     local = False
 
     p4_source = ["src/traffic_gen.p4", "src/util.p4", "src/headers.p4"]
-    switch_processes = ["tofino-model", "bf_switchd"]
-    project_dir = f"/tmp/{program_name}/"
+    virtual_switch_processes = ["tofino-model", "bf_switchd"]
+    physical_switch_prcesses = ["bf_switchd"]
+    project_dir = f"/tmp/{program_name}"
 
     traffic_configuration = TrafficConfigurator(virtual_switch=virtual_switch)
-    traffic_configuration.configure_generator(port=68, generation_time_s=5)
+    traffic_configuration.configure_generator(port=68, generation_time_s=15)
     traffic_configuration.add_virtual_output_port(1)
-    traffic_configuration.add_physical_output_port(10, "100G")
+    traffic_configuration.add_physical_output_port(9, "25G")
     traffic_configuration.add_packet_data(
-        source_cidr="10.2.2.0/24", destination_cidr="10.2.2.1/32"
+        source_cidr="10.1.1.0/24",
+        destination_cidr="10.1.1.5/32",
+        eth_dst="e8:eb:d3:c1:56:e5",
+        pkt_len=500
     )
     traffic_configuration.craft_tcp_packet()
-    traffic_configuration.add_throughput(3000, "port_shaping")
+    traffic_configuration.add_throughput(1000, "port_shaping")
     traffic_configuration.generate()
 
     ssh_client = ssh_conn(
-        hostname=hostname, username=username, keyfile=keyfile, port=ssh_port
+        hostname=hostname, username=username, password=password, port=ssh_port
     )
 
-    switch = TofinoSwitch(ssh_client)
+    switch = TofinoSwitch(ssh_client, virtual_switch=virtual_switch)
 
     env_vars = switch.get_env_vars(BF_SDE_ENV_VARS, local)
     source_changed = switch.compare_and_handle_files(
@@ -69,17 +89,17 @@ def main():
         switch.setup_interfaces(env_vars, project_dir)
         output_device_port = traffic_configuration.output_virtual_port
         switch.handle_processes(
-            switch_processes, program_name, env_vars, source_changed
+            virtual_switch_processes, program_name, env_vars, source_changed
         )
     else:
         switch.handle_processes(
-            switch_processes, program_name, env_vars, source_changed
+            physical_switch_prcesses, program_name, env_vars, source_changed
         )
         switch.setup_interfaces(env_vars, project_dir)
         # This need to be fixed
         for port in switch.phy_port_table:
             if port.get("PORT") == f"{traffic_configuration.output_physical_port}/0":
-                output_device_port = port["D_P"]
+                output_device_port = int(port["D_P"])
 
     bfrt_data = switch.get_bfrt_definition(
         program_name=program_name, remote_env_vars=env_vars, local=local
@@ -121,14 +141,24 @@ def main():
         "pkt_counter": 0,
         "trigger_counter": 0,
     }
-
+    
     grpc_manager = GRPCManager(hostname, grpc_port, ssh_client)
     print("[OK] gRPC Connection established")
     bfrt_info, bfrt_helper = grpc_manager.get_bfrt_info_and_helper(bfrt_data)
     print(
         "[+] Copied and loaded extended Barefoot Runtime definition for Tofino target"
     )
+    
+    #result = make_port_map(program_name, bfrt_helper, grpc_manager.client, ["9/0"])
+    #print(result)
 
+    port_stat_map = {}
+    port_metrics = {}
+    port_stat_table = bfrt_info.get_table("$PORT_STAT")
+    for field in port_stat_table.data:
+        port_stat_map[field.singleton.id] =  field.singleton.name
+        
+    
     print("[+] Beginning traffic generator setup")
     traffic_generator = TrafficGenerator(bfrt_info, bfrt_helper, grpc_manager.client)
 
@@ -176,14 +206,33 @@ def main():
     print(
         f"[+] Running traffic generator for {traffic_configuration.generation_time_s} seconds..."
     )
-    traffic_generator.run_packet_generator(
+
+    status, metrics = traffic_generator.run_packet_generator(
         program_name,
         traffic_configuration.g_timer_app_id,
-        traffic_configuration.generation_time_s,
+        virtual_switch,
+        output_port=output_device_port,
+        runtime_s=traffic_configuration.generation_time_s,
+        measure_res_s=1.0,
     )
+  
     print("[OK] Run finished!")
+    
     grpc_manager.close()
 
+    print("[+] Generate report:")
+    print()
+    print("  > Intial packet definition:")
+    print()
+    traffic_configuration.packet.show()
+    print()
+    print("  > Traffic generator metrics for this run:")
+    print()
+    table = port_metrics_table(metrics, traffic_configuration.pkt_len)
+    print(table)
+    print()
+    print("[OK] Exiting...")
+    
     return
 
 

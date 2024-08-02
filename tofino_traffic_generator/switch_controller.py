@@ -5,6 +5,7 @@ import struct
 import time
 import signal
 import sys
+import threading
 from queue import Queue
 from threading import Thread
 import bfrt_helper.pb2.bfruntime_pb2 as bfruntime_pb2
@@ -407,7 +408,7 @@ class TofinoSwitch:
             values = [value.strip() for value in line.split("|")]
             entry = dict(zip(headers, values))
             data.append(entry)
-
+        ssh_exec(self.ssh_client, "sudo rm -f /tmp/port_config.txt")
         return data
 
     def setup_interfaces(self, remote_env_vars, project_dir):
@@ -420,12 +421,10 @@ class TofinoSwitch:
             scp_put(self.ssh_client, "src/port_config.txt", "/tmp/port_config.txt")
             stdin, stdout, stderr = ssh_exec(
                 self.ssh_client,
-                f". .profile > /dev/null ; /bin/bash {remote_env_vars['SDE']}/run_bfshell.sh"
-                f" -f /tmp/port_config.txt",
+                f". .profile > /dev/null ; /bin/bash {remote_env_vars['SDE']}/run_bfshell.sh -f /tmp/port_config.txt"
             )
             raw_port_table = self.get_phy_port_list(stdout.readlines())
             self.phy_port_table = self.parse_phy_port_list(raw_port_table)
-            ssh_exec(self.ssh_client, "sudo rm -f /tmp/port_config.txt")
 
     def handle_processes(
         self, process_names, program_name, remote_env_vars, source_changed
@@ -714,13 +713,68 @@ class TrafficGenerator:
             False,
         )
 
-    def run_packet_generator(self, program_name, app_id, runtime_s):
+    
+    def run_packet_generator(self, program_name, app_id, virtual_switch, output_port=None, runtime_s=5, measure_res_s=1):
         status = {}
-        status["start_packet_generation"] = self.start_packet_generation(
-            program_name, app_id
-        )
-        time.sleep(runtime_s)
-        status["stop_packet_generation"] = self.stop_packet_generation(
-            program_name, app_id
-        )
-        return status
+        port_metrics = {}
+        port_metrics["time_s"] = []
+
+        def packet_generation():
+            status["start_packet_generation"] = self.start_packet_generation(
+                program_name, app_id
+            )
+            time.sleep(runtime_s)
+            status["stop_packet_generation"] = self.stop_packet_generation(
+                program_name, app_id
+            )
+
+        
+        if virtual_switch:
+            if output_port is not None:
+                print("[!] Port metrics are not available on the model - skipping metrics collection...")
+            packet_generation()
+            return status, port_metrics
+
+    
+        else:
+            if output_port is None:
+                print("[!] No output device port specified - skipping metrics collection...")
+                return status, port_metrics
+
+            port_stat_map = {}
+            port_stat_table = self.bfrt_info.get_table("$PORT_STAT")
+            for field in port_stat_table.data:
+                port_stat_map[field.singleton.id] =  field.singleton.name
+
+            print(f"  > Collecting port metrics from device port {output_port}...")
+            request = self.bfrt_helper.create_table_read(program_name,"$PORT_STAT", {'$DEV_PORT': Exact(DevPort(output_port))})
+
+
+            def capture_port_metrics():
+                time.sleep(measure_res_s)
+                response = self.grpc_client.Read(request)
+                port_metrics["time_s"].append(time.perf_counter()-start_time)
+                data = response.next()
+                for field in data.entities[0].table_entry.data.fields:
+                    field_id = field.field_id
+                    field_value = int.from_bytes(field.stream, byteorder="big")
+                    metric_key = port_stat_map[field_id]
+                    
+                    if metric_key not in port_metrics:
+                        port_metrics[metric_key] = [field_value]
+                    else:
+                        port_metrics[metric_key].append(field_value)
+            
+            thread = threading.Thread(target=packet_generation)
+            thread.start()
+
+            start_time = time.perf_counter()
+            while thread.is_alive():
+                capture_port_metrics()
+            # Append final values
+            capture_port_metrics()
+            thread.join()        
+            
+            return status, port_metrics
+
+        

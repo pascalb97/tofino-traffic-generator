@@ -30,6 +30,7 @@ def initialize_src():
         "headers.p4",
         "port_config.txt",
         "traffic_gen.p4",
+        "port_config.txt",
     ]
     delete_existing_files(source_files)
 
