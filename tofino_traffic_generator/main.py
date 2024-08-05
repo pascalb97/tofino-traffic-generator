@@ -1,16 +1,12 @@
 import os
-import time
-import threading
+import sys
 from tabulate import tabulate
 from ssh_conn import ssh_conn
 from switch_controller import TofinoSwitch, TrafficGenerator, GRPCManager
 from traffic_config import TrafficConfigurator
 from bfrt_helper.fields import DevPort, PortId
 from bfrt_helper.match import Exact
-from bfrt_helper.bfrt import BfRtHelper, BfRtInfo, make_port_map
-import bfrt_helper.pb2.bfruntime_pb2 as bfruntime_pb2
-import bfrt_helper.pb2.bfruntime_pb2_grpc as bfruntime_pb2_grpc
-from pprint import pprint
+
 # import logging
 
 
@@ -27,13 +23,15 @@ ENV_VAR_NOT_FOUND_ERROR = "Environment variable '{}' not found or empty."
 COMMAND_EXECUTION_ERROR = "Error occurred while executing command for {}: {}"
 BF_SDE_ENV_VARS = ["SDE", "SDE_INSTALL"]
 os.environ["GRPC_VERBOSITY"] = "NONE"
+
 # _LOGGER = logging.getLogger(__name__)
 # _LOGGER.setLevel(logging.INFO)
+
 
 def port_metrics_table(metrics, packet_length):
     table = []
     for i, time in enumerate(metrics["time_s"]):
-        mpps = (metrics["$FramesTransmittedOK"][i]/1.0e6)/time
+        mpps = (metrics["$FramesTransmittedOK"][i] / 1.0e6) / time
         mbps = ((metrics["$FramesTransmittedOK"][i] * 8 * packet_length) / 1.0e6) / time
         table.append([i, time, metrics["$FramesTransmittedOK"][i], mpps, mbps])
 
@@ -41,8 +39,6 @@ def port_metrics_table(metrics, packet_length):
 
 
 def main():
-    # TODO: Change local/remote logic
-
     hostname = "172.16.1.11"
     username = "p4-user"
     password = "htw-p4-user"
@@ -67,15 +63,18 @@ def main():
         source_cidr="10.1.1.0/24",
         destination_cidr="10.1.1.5/32",
         eth_dst="e8:eb:d3:c1:56:e5",
-        pkt_len=500
+        pkt_len=500,
     )
     traffic_configuration.craft_tcp_packet()
     traffic_configuration.add_throughput(1000, "port_shaping")
     traffic_configuration.generate()
 
-    ssh_client = ssh_conn(
-        hostname=hostname, username=username, password=password, port=ssh_port
-    )
+    try:
+        ssh_client = ssh_conn(
+            hostname=hostname, username=username, password=password, port=ssh_port
+        )
+    except Exception:
+        sys.exit(1)
 
     switch = TofinoSwitch(ssh_client, virtual_switch=virtual_switch)
 
@@ -141,24 +140,17 @@ def main():
         "pkt_counter": 0,
         "trigger_counter": 0,
     }
-    
+
     grpc_manager = GRPCManager(hostname, grpc_port, ssh_client)
     print("[OK] gRPC Connection established")
     bfrt_info, bfrt_helper = grpc_manager.get_bfrt_info_and_helper(bfrt_data)
     print(
         "[+] Copied and loaded extended Barefoot Runtime definition for Tofino target"
     )
-    
-    #result = make_port_map(program_name, bfrt_helper, grpc_manager.client, ["9/0"])
-    #print(result)
 
-    port_stat_map = {}
-    port_metrics = {}
-    port_stat_table = bfrt_info.get_table("$PORT_STAT")
-    for field in port_stat_table.data:
-        port_stat_map[field.singleton.id] =  field.singleton.name
-        
-    
+    # result = make_port_map(program_name, bfrt_helper, grpc_manager.client, ["9/0"])
+    # print(result)
+
     print("[+] Beginning traffic generator setup")
     traffic_generator = TrafficGenerator(bfrt_info, bfrt_helper, grpc_manager.client)
 
@@ -215,14 +207,14 @@ def main():
         runtime_s=traffic_configuration.generation_time_s,
         measure_res_s=1.0,
     )
-  
+
     print("[OK] Run finished!")
-    
+
     grpc_manager.close()
 
     print("[+] Generate report:")
     print()
-    print("  > Intial packet definition:")
+    print("  > Initial packet definition:")
     print()
     traffic_configuration.packet.show()
     print()
@@ -232,7 +224,7 @@ def main():
     print(table)
     print()
     print("[OK] Exiting...")
-    
+
     return
 
 

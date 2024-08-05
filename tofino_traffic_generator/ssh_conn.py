@@ -31,7 +31,7 @@ def ssh_conn(hostname, username=None, password=None, keyfile=None, port=22):
         return client
     except Exception as e:
         print(f"[!] Failed to connect to {hostname}: {e}")
-        return None
+        raise
 
 
 def ssh_exec(client, command, env_vars=None):
@@ -39,6 +39,7 @@ def ssh_exec(client, command, env_vars=None):
         return client.exec_command(command, environment=env_vars)
     except Exception as e:
         print(f"[!] Failed to execute command {command}: {e}")
+        raise
 
 
 def scp_put(client, localpath, remotepath):
@@ -48,6 +49,7 @@ def scp_put(client, localpath, remotepath):
         sftp.close()
     except Exception as e:
         print(f"[!] Failed to copy file {localpath} to {remotepath}: {e}")
+        raise
 
 
 def scp_var_to_file(client, file_path, data):
@@ -89,6 +91,7 @@ def create_remote_dir(client, remote_path):
         sftp.close()
     except Exception as e:
         print(f"[!] Failed to create directory {remote_path}: {e}")
+        raise
 
 
 def delete_remote_dir(client, remote_path):
@@ -96,6 +99,7 @@ def delete_remote_dir(client, remote_path):
         return ssh_exec(client, f"sudo rm -rf {remote_path}")
     except Exception as e:
         print(f"[!] Failed to delete directory {remote_path}: {e}")
+        raise
 
 
 def compute_local_file_checksum(file_path):

@@ -35,9 +35,8 @@ def initialize_src():
     delete_existing_files(source_files)
 
 
-def generate_p4(throughput_defined, throughput_mode, traffic_configurator):
+def generate_p4(traffic_configurator):
     template_data = {
-        "throughput_defined": throughput_defined,
         "traffic_gen": traffic_configurator,
     }
     template_to_file(
@@ -324,7 +323,7 @@ class TrafficConfigurator:
             and not self.tcp_defined
         ):
             self.eth_defined = True
-        generate_p4(self.throughput_defined, self.throughput_mode, self)
+        generate_p4(self)
         generate_header(
             self.eth_defined,
             self.IP_defined,
