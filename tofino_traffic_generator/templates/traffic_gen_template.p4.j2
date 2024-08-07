@@ -273,12 +273,12 @@ control SwitchEgressDeparser(
              hdr.ipv4.src_addr,
              hdr.ipv4.dst_addr});
 
-        pkt.emit(ethernet);
-        pkt.emit(ipv4);
-        if (ipv4.protocol == 6) { // Check if it's a TCP packet
-            pkt.emit(tcp);
-        } else if (ipv4.protocol == 17) { // Check if it's a UDP packet
-            pkt.emit(udp);
+        pkt.emit(hdr.ethernet);
+        pkt.emit(hdr.ipv4);
+        if (hdr.ipv4.protocol == 6) { // Check if it's a TCP packet
+            pkt.emit(hdr.tcp);
+        } else if (hdr.ipv4.protocol == 17) { // Check if it's a UDP packet
+            pkt.emit(hdr.udp);
         }
     }
 }
