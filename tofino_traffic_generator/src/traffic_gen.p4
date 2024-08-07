@@ -19,7 +19,7 @@ struct headers {
 }
 
 struct ingress_metadata_t {
-        bit<32> src_mask;
+    bit<32> src_mask;
     bit<32> dst_mask;
 }
 struct egress_metadata_t {}
@@ -133,7 +133,6 @@ control SwitchIngress(
     }
 
     apply {
-
         if (hdr.timer.isValid()) {
             t.apply();
         } else if (hdr.port_down.isValid()) {

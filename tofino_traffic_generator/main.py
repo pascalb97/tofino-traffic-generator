@@ -116,10 +116,10 @@ def main():
 
     timer_config_keys = {
         "ig_intr_md.ingress_port": traffic_configuration.generation_port,
-        "hdr.timer.pipe_id": 0,
-        "hdr.timer.app_id": 1,
-        "hdr.timer.batch_id": 0,
-        "hdr.timer.packet_id": 0,
+        "hdr.timer.pipe_id": traffic_configuration.timer_pipe_id,
+        "hdr.timer.app_id": traffic_configuration.timer_app_id,
+        "hdr.timer.batch_id": traffic_configuration.timer_batch_id,
+        "hdr.timer.packet_id": traffic_configuration.timer_packet_id,
     }
 
     packet_gen_action_config = {"timer_nanosec": 1}
@@ -154,7 +154,9 @@ def main():
     print("[+] Beginning traffic generator setup")
     traffic_generator = TrafficGenerator(bfrt_info, bfrt_helper, grpc_manager.client)
 
-    print("  > Initialize timer table")
+    print(
+        f"  > Initialize traffic data rate to {traffic_configuration.throughput} Mbps"
+    )
     traffic_generator.configure_port_shaping(
         program_name,
         port_shaping_data,
@@ -182,7 +184,7 @@ def main():
     )
     traffic_generator.configure_packet_gen(
         program_name,
-        traffic_configuration.g_timer_app_id,
+        traffic_configuration.timer_app_id,
         packet_gen_action_config["timer_nanosec"],
         packet_gen_data_config,
     )
@@ -201,7 +203,7 @@ def main():
 
     status, metrics = traffic_generator.run_packet_generator(
         program_name,
-        traffic_configuration.g_timer_app_id,
+        traffic_configuration.timer_app_id,
         virtual_switch,
         output_port=output_device_port,
         runtime_s=traffic_configuration.generation_time_s,

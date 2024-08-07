@@ -92,7 +92,10 @@ class TrafficConfigurator:
         # packet generator options
         self.generation_port = 68
         self.generation_time_s = 5
-        self.g_timer_app_id = 1
+        self.timer_app_id = 1
+        self.timer_packet_id = 0
+        self.timer_batch_id = 0
+        self.timer_pipe_id = 0
         self.packet_batch_size = 1  # packets per batch
         self.packet_batch_number = 1  # batch number
         self.packet_buffer_offset = (
@@ -210,6 +213,26 @@ class TrafficConfigurator:
             with_udp_chksum=with_checksum,
         )
 
+    def craft_icmp_packet(self, icmp_type=8, icmp_code=0, icmp_data=""):
+        self.packet = packets.simple_icmp_packet(
+            pktlen=self.pkt_len,
+            eth_dst=self.eth_dst,
+            eth_src=self.eth_src,
+            dl_vlan_enable=self.dl_vlan_enable,
+            vlan_vid=self.vlan_vid,
+            vlan_pcp=self.vlan_pcp,
+            ip_src=self.ip_src,
+            ip_dst=self.ip_dst,
+            ip_tos=self.ip_tos,
+            ip_ecn=self.ip_ecn,
+            ip_dscp=self.ip_dscp,
+            ip_ttl=self.ip_ttl,
+            ip_id=self.ip_id,
+            icmp_type=icmp_type,
+            icmp_code=icmp_code,
+            icmp_data=icmp_data,
+        )
+
     def get_attributes(self):
         attributes = dir(self)
         # Filter out the special methods (those starting and ending with __)
@@ -227,7 +250,7 @@ class TrafficConfigurator:
     ):
         self.generation_port = port
         self.generation_time_s = generation_time_s
-        self.g_timer_app_id = timer_app_id
+        self.timer_app_id = timer_app_id
         self.packet_batch_size = packet_batch_size  # packets per batch
         self.packet_batch_number = packet_batch_number  # batch number
         self.packet_buffer_offset = packet_buffer_offset
