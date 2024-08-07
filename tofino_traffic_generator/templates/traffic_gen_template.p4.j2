@@ -23,6 +23,16 @@ struct headers {
 struct ingress_metadata_t {
     bit<32> src_mask;
     bit<32> dst_mask;
+
+    bit<16> checksum_ipv4_tmp;
+    bit<16> checksum_tcp_tmp;
+    bit<16> checksum_udp_tmp;
+
+    bool checksum_upd_ipv4;
+    bool checksum_upd_tcp;
+    bool checksum_upd_udp;
+
+    bool checksum_err_ipv4_igprs;
 }
 struct egress_metadata_t {}
 
@@ -33,6 +43,7 @@ parser SwitchIngressParser(
     out ingress_intrinsic_metadata_t ig_intr_md) {
 
     state start {
+        //tofino_parser.apply(pkt, ig_intr_md);
         pkt.extract(ig_intr_md);
         pkt.advance(PORT_METADATA_SIZE);
 
@@ -98,6 +109,8 @@ control SwitchIngress(
     in ingress_intrinsic_metadata_from_parser_t ig_prsr_md,
     inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
     inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
+
+    action nop_() { }
 
     action drop() {
         ig_dprsr_md.drop_ctl = 0x1;
@@ -169,15 +182,19 @@ parser SwitchEgressParser(
 
     TofinoEgressParser() tofino_parser;
 
+    Checksum() ipv4_checksum;
+    Checksum() tcp_checksum;
+    Checksum() udp_checksum;
+
     state start {
         tofino_parser.apply(pkt, eg_intr_md);
         transition parse_ethernet;
     }
 
-    //state parse_pkt_gen {
-    //    pkt.extract(hdr.pkt_gen);
-    //    transition parse_ethernet;
-    //}
+    state parse_pkt_gen {
+        pkt.extract(hdr.pkt_gen);
+        transition parse_ethernet;
+    }
 
     state parse_ethernet {
         pkt.extract(hdr.ethernet);
@@ -189,6 +206,10 @@ parser SwitchEgressParser(
 
     state parse_ipv4 {
         pkt.extract(hdr.ipv4);
+        tcp_checksum.subtract({hdr.ipv4.src_addr});
+        tcp_checksum.subtract({hdr.ipv4.dst_addr});
+        udp_checksum.subtract({hdr.ipv4.src_addr});
+        udp_checksum.subtract({hdr.ipv4.dst_addr});
         transition select(hdr.ipv4.protocol) {
             IP_PROTOCOLS_UDP: parse_udp;
             IP_PROTOCOLS_TCP: parse_tcp;
@@ -198,15 +219,18 @@ parser SwitchEgressParser(
 
     state parse_tcp {
         pkt.extract(hdr.tcp);
+        tcp_checksum.subtract({hdr.tcp.checksum});
+        meta.checksum_tcp_tmp = tcp_checksum.get();
         transition accept;
     }
 
     state parse_udp {
         pkt.extract(hdr.udp);
+        udp_checksum.subtract({hdr.udp.checksum});
+        meta.checksum_udp_tmp = udp_checksum.get();
         transition accept;
     }
 }
-
 
 /* Define the random IP address generation */
 control SwitchEgress(
@@ -260,6 +284,8 @@ control SwitchEgressDeparser(
     in egress_intrinsic_metadata_for_deparser_t eg_dprsr_md) {
 
     Checksum() ipv4_checksum;
+    Checksum() tcp_checksum;
+    Checksum() udp_checksum;
 
     apply {
         hdr.ipv4.hdr_checksum = ipv4_checksum.update(
@@ -275,10 +301,19 @@ control SwitchEgressDeparser(
              hdr.ipv4.src_addr,
              hdr.ipv4.dst_addr});
 
+        hdr.tcp.checksum = tcp_checksum.update({
+            hdr.ipv4.src_addr,
+            hdr.ipv4.dst_addr,
+            meta.checksum_tcp_tmp
+            });
+
+        hdr.udp.checksum = udp_checksum.update(data = {
+            hdr.ipv4.src_addr,
+            hdr.ipv4.dst_addr,
+            meta.checksum_udp_tmp
+        }, zeros_as_ones = true);
+            // UDP specific checksum handling
         pkt.emit(hdr);
-        //pkt.emit(hdr.ipv4);
-        //pkt.emit(hdr.tcp);
-        //pkt.emit(hdr.udp);
     }
 }
 
