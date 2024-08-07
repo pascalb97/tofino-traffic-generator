@@ -79,7 +79,7 @@ parser SwitchIngressParser(
     }
 
     state parse_udp {
-        pkt.extract( hdr.udp);
+        pkt.extract(hdr.udp);
         transition accept;
     }
     {% endif %}
@@ -174,10 +174,10 @@ parser SwitchEgressParser(
         transition parse_ethernet;
     }
 
-    state parse_pkt_gen {
-        pkt.extract(hdr.pkt_gen);
-        transition parse_ethernet;
-    }
+    //state parse_pkt_gen {
+    //    pkt.extract(hdr.pkt_gen);
+    //    transition parse_ethernet;
+    //}
 
     state parse_ethernet {
         pkt.extract(hdr.ethernet);
@@ -223,9 +223,11 @@ control SwitchEgress(
     bit<32> src_mask = 0;
     bit<32> dst_mask = 0;
 
-    action replace_ip_address(bit<32> s_mask, bit<32> d_mask) {
+    action replace_ip_address(mac_addr_t src_mac, mac_addr_t dst_mac, bit<32> s_mask, bit<32> d_mask) {
             src_mask = s_mask;
             dst_mask = d_mask;
+            hdr.ethernet.dst_addr = dst_mac;
+            hdr.ethernet.src_addr = src_mac;
     }
 
     table egress_table {
@@ -273,13 +275,10 @@ control SwitchEgressDeparser(
              hdr.ipv4.src_addr,
              hdr.ipv4.dst_addr});
 
-        pkt.emit(hdr.ethernet);
-        pkt.emit(hdr.ipv4);
-        if (hdr.ipv4.protocol == 6) { // Check if it's a TCP packet
-            pkt.emit(hdr.tcp);
-        } else if (hdr.ipv4.protocol == 17) { // Check if it's a UDP packet
-            pkt.emit(hdr.udp);
-        }
+        pkt.emit(hdr);
+        //pkt.emit(hdr.ipv4);
+        //pkt.emit(hdr.tcp);
+        //pkt.emit(hdr.udp);
     }
 }
 

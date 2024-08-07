@@ -73,6 +73,11 @@ class PacketField(Field):
     bitwidth = 16384
 
 
+class MACField(Field):
+    # 16 KByte packet buffer
+    bitwidth = 48
+
+
 class GRPCManager:
     def __init__(
         self,
@@ -578,7 +583,7 @@ class TrafficGenerator:
         return request, response
 
     def configure_egress_table(
-        self, source_mask, destination_mask, output_port, program_name
+        self, source_mask, destination_mask, src_mac, dst_mac, output_port, program_name
     ):
         status = {}
         egress_table = self.bfrt_info.get_table("pipe.SwitchEgress.egress_table")
@@ -591,6 +596,8 @@ class TrafficGenerator:
             action_params={
                 "s_mask": IntField(ip2int(source_mask)),
                 "d_mask": IntField(ip2int(destination_mask)),
+                "src_mac": MACField(mac2int(src_mac)),
+                "dst_mac": MACField(mac2int(dst_mac)),
             },
             update_type=bfruntime_pb2.Update.Type.INSERT,
         )
