@@ -198,35 +198,17 @@ class TofinoSwitch:
 
         return result
 
-    def get_env_vars(self, var_names, local):
-        if not local:
-            env_vars = {
-                var_name: self.fetch_env_var(var_name) for var_name in var_names
-            }
-        else:
-            env_vars = {var_name: os.getenv(var_name) for var_name in var_names}
-        return env_vars
+    def get_env_vars(self, var_names):
+        return {var_name: self.fetch_env_var(var_name) for var_name in var_names}
 
-    def get_bfrt_definition(self, program_name, remote_env_vars=None, local=True):
+    def get_bfrt_definition(self, program_name, remote_env_vars=None):
         file_path_template = "{install_path}/share/tofinopd/{program_name}/bf-rt.json"
-
-        def load_local_data():
-            install_path = os.getenv("SDE_INSTALL")
-            file_path = file_path_template.format(
-                install_path=install_path, program_name=program_name
-            )
-            with open(file_path) as json_file:
-                return json.load(json_file)
-
-        def load_remote_data():
-            install_path = remote_env_vars["SDE_INSTALL"]
-            file_path = file_path_template.format(
-                install_path=install_path, program_name=program_name
-            )
-            bfrt_json = remote_file_read(self.ssh_client, file_path)
-            return json.loads(bfrt_json)
-
-        return load_local_data() if local else load_remote_data()
+        install_path = remote_env_vars["SDE_INSTALL"]
+        file_path = file_path_template.format(
+            install_path=install_path, program_name=program_name
+        )
+        bfrt_json = remote_file_read(self.ssh_client, file_path)
+        return json.loads(bfrt_json)
 
     def remote_file_read(self, file_path):
         # Dummy function for reading remote files. Implement as needed.
@@ -308,11 +290,14 @@ class TofinoSwitch:
             )
             command = f"sudo /bin/bash -s <<'EOF'\n{script_content}\nEOF"
             stdin, stdout, stderr = ssh_exec(self.ssh_client, command)
+            compilation_error = False
             for line in stderr.readlines():
                 print(line.strip())
-            if stderr.read():
+                if "Error" in line:
+                    compilation_error = True
+            if compilation_error:
                 raise SSHCommandExecutionError(
-                    f"Error during P4 compilation and/or install: {stderr.read()}"
+                    "Error during P4 compilation and/or install!"
                 )
         except Exception as e:
             raise SSHCommandExecutionError(
@@ -378,10 +363,16 @@ class TofinoSwitch:
         if not all_files_same:
             print("[-] Removing remote project dir")
             delete_remote_dir(self.ssh_client, remote_dir)
+            if not self.virtual_switch:
+                time.sleep(1)
             print("[+] Creating remote project dir")
             create_remote_dir(self.ssh_client, remote_path=remote_dir)
-            print("[*] Compiling and installing traffic generator P4 application")
-            self.install_p4_program(program_name, remote_dir, remote_env_vars)
+            try:
+                print("[*] Compiling and installing traffic generator P4 application")
+                self.install_p4_program(program_name, remote_dir, remote_env_vars)
+            except Exception as e:
+                print(e)
+                sys.exit(1)
             print("[OK] Compilation and installation successful!")
             return True
         else:

@@ -85,7 +85,7 @@ class TrafficConfigurator:
         self.channel = 0
         self.port_speed = ""
         self.throughput_defined = False
-        self.throughput = 3000
+        self.throughput_mbps = 3000
         self.throughput_mode = ""  # meter or port_shaping
         self.pkt_len = 64
 
@@ -332,9 +332,9 @@ class TrafficConfigurator:
             self.ip_dst = ip_dst
             self.destination_mask = None
 
-    def add_throughput(self, throughput, mode):
+    def add_throughput(self, throughput_mbps, mode):
         self.throughput_defined = True
-        self.throughput = throughput
+        self.throughput_mbps = throughput_mbps
         self.throughput_mode = mode
 
     def generate(self):

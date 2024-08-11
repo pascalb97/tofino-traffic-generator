@@ -7,25 +7,11 @@ from traffic_config import TrafficConfigurator
 from bfrt_helper.fields import DevPort, PortId
 from bfrt_helper.match import Exact
 
-# import logging
-
-
-# sys.path.append(os.path.expandvars("$SDE/install/lib/python3.8/site-packages/tofino/"))
-# sys.path.append(os.path.expandvars("$SDE/install/lib/python3.8/site-packages/"))
-# sys.path.append(os.path.expandvars("$SDE/install/lib/python3.8/site-packages/ptf/"))
-
-
-# BFRT_PATH = f"{SDE_INSTALL}/share/tofinopd/{PROGRAM_NAME}/bf-rt.json"
-# CTX_PATH = f"{SDE_INSTALL}/share/tofinopd/{PROGRAM_NAME}/pipe/context.json"
-# BIN_PATH = f"{SDE_INSTALL}/share/tofinopd/{PROGRAM_NAME}/pipe/tofino.bin"
 
 ENV_VAR_NOT_FOUND_ERROR = "Environment variable '{}' not found or empty."
 COMMAND_EXECUTION_ERROR = "Error occurred while executing command for {}: {}"
 BF_SDE_ENV_VARS = ["SDE", "SDE_INSTALL"]
 os.environ["GRPC_VERBOSITY"] = "NONE"
-
-# _LOGGER = logging.getLogger(__name__)
-# _LOGGER.setLevel(logging.INFO)
 
 
 def port_metrics_table(metrics, packet_length):
@@ -39,46 +25,49 @@ def port_metrics_table(metrics, packet_length):
 
 
 def main():
-    hostname = "172.16.1.11"
-    username = "p4-user"
-    password = "htw-p4-user"
+    hostname = "192.168.178.68"
+    username = "vagrant"
+    ssh_port = 2222
     program_name = "traffic_gen"
     grpc_port = 50052
     keyfile = "/Users/pascal/.ssh/tofinovm_key"
-    ssh_port = 22
-
-    virtual_switch = False
-    local = False
 
     p4_source = ["src/traffic_gen.p4", "src/util.p4", "src/headers.p4"]
     virtual_switch_processes = ["tofino-model", "bf_switchd"]
     physical_switch_prcesses = ["bf_switchd"]
     project_dir = f"/tmp/{program_name}"
 
-    traffic_configuration = TrafficConfigurator(virtual_switch=virtual_switch)
+    virtual_switch = True
+
+    traffic_configuration = TrafficConfigurator(virtual_switch=True)
     traffic_configuration.configure_generator(port=68, generation_time_s=15)
     traffic_configuration.add_virtual_output_port(1)
-    traffic_configuration.add_physical_output_port(9, "25G")
+    traffic_configuration.add_physical_output_port(
+        output_physical_port=1, port_speed="25G"
+    )
     traffic_configuration.add_packet_data(
-        source_cidr="10.1.1.0/24",
+        source_cidr="10.1.1.74/24",
         destination_cidr="10.1.1.5/32",
+        eth_src="e8:eb:d3:c1:56:e7",
         eth_dst="e8:eb:d3:c1:56:e5",
         pkt_len=500,
     )
-    traffic_configuration.craft_tcp_packet()
-    traffic_configuration.add_throughput(1000, "port_shaping")
+    traffic_configuration.craft_udp_packet()
+    traffic_configuration.craft_ipv4_packet()
+    traffic_configuration.craft_tcp_packet(with_checksum=True)
+    traffic_configuration.add_throughput(throughput_mbps=1000, mode="port_shaping")
     traffic_configuration.generate()
 
     try:
         ssh_client = ssh_conn(
-            hostname=hostname, username=username, password=password, port=ssh_port
+            hostname=hostname, username=username, keyfile=keyfile, port=ssh_port
         )
     except Exception:
         sys.exit(1)
 
     switch = TofinoSwitch(ssh_client, virtual_switch=virtual_switch)
 
-    env_vars = switch.get_env_vars(BF_SDE_ENV_VARS, local)
+    env_vars = switch.get_env_vars(BF_SDE_ENV_VARS)
     source_changed = switch.compare_and_handle_files(
         p4_source, project_dir, program_name, env_vars
     )
@@ -101,7 +90,7 @@ def main():
                 output_device_port = int(port["D_P"])
 
     bfrt_data = switch.get_bfrt_definition(
-        program_name=program_name, remote_env_vars=env_vars, local=local
+        program_name=program_name, remote_env_vars=env_vars
     )
 
     output_port_data = {"port": PortId(output_device_port)}
@@ -110,7 +99,7 @@ def main():
         "max_rate_enable": True,
         "unit": "BPS",
         "provisioning": "MIN_ERROR",
-        "max_rate": traffic_configuration.throughput * 1000,
+        "max_rate": traffic_configuration.throughput_mbps * 1000,
         "max_burst_size": 1000,
     }
 
@@ -155,7 +144,7 @@ def main():
     traffic_generator = TrafficGenerator(bfrt_info, bfrt_helper, grpc_manager.client)
 
     print(
-        f"  > Initialize traffic data rate to {traffic_configuration.throughput} Mbps"
+        f"  > Initialize traffic data rate to {traffic_configuration.throughput_mbps} Mbps"
     )
     traffic_generator.configure_port_shaping(
         program_name,
@@ -174,6 +163,8 @@ def main():
     traffic_generator.configure_egress_table(
         traffic_configuration.source_mask,
         traffic_configuration.destination_mask,
+        traffic_configuration.eth_src,
+        traffic_configuration.eth_dst,
         output_device_port,
         program_name,
     )
