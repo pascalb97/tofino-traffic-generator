@@ -52,9 +52,7 @@ def main():
         eth_dst="e8:eb:d3:c1:56:e5",
         pkt_len=500,
     )
-    traffic_configuration.craft_udp_packet()
     traffic_configuration.craft_ipv4_packet()
-    traffic_configuration.craft_tcp_packet(with_checksum=True)
     traffic_configuration.add_throughput(throughput_mbps=1000, mode="port_shaping")
     traffic_configuration.generate()
 
