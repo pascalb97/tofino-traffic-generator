@@ -81,6 +81,11 @@ traffic_configuration.add_throughput(throughput_mbps=1000, mode="port_shaping")
 traffic_configuration.generate()
 ```
 
+## Development Enviroment
+
+The directory `dev_enviroment` contains a Vagrant configuration for the setup of a virtual dev enviroment based on the Tofino-Model.
+This is based on the project [tofino-model-vagrant](https://github.com/APS-Networks/tofino-model-vagrant) by APS Networks. The directory contains further information about the setup process. Alternatively check out the tofino-model-vagrant project directly.
+
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request with your changes.
