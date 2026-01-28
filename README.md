@@ -40,7 +40,7 @@ cd tofino-traffic-generator
 ```bash
 # Creates the virtual environment
 python3 -m venv .venv
-source env/bin/activate
+source .venv/bin/activate
 # Install dependencies
 pip install .
 # Update protobuf definitions
