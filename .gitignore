@@ -128,3 +128,6 @@ pyrightconfig.json
 
 # Logging
 log.txt
+
+# Project config file
+tof_gen_config.json

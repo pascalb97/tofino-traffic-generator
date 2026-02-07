@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from tabulate import tabulate
 from ssh_conn import ssh_conn
 from switch_controller import TofinoSwitch, TrafficGenerator, GRPCManager
@@ -14,6 +15,23 @@ BF_SDE_ENV_VARS = ["SDE", "SDE_INSTALL"]
 os.environ["GRPC_VERBOSITY"] = "NONE"
 
 
+def read_json_file(file_path):
+    """Reads a JSON file and returns the data."""
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+            return data
+    except FileNotFoundError:
+        print(f"The config file {file_path} does not exist. Please make sure it exists.")
+        return None
+    except json.JSONDecodeError:
+        print("There was an error decoding the JSON. Please check the file format.")
+        return None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+
 def port_metrics_table(metrics, packet_length):
     table = []
     for i, time in enumerate(metrics["time_s"]):
@@ -25,42 +43,60 @@ def port_metrics_table(metrics, packet_length):
 
 
 def main():
-    hostname = "192.168.178.68"
-    username = "vagrant"
-    ssh_port = 2222
+
+    config_file_path = 'tof_gen_config.json'  # Specify the path to the project config file 
+    data = read_json_file(config_file_path)
+    if data is None:
+        return
+
+    hostname =  data.get('hostname') # the tofino switch
+    username =  data.get('username')
+    password =  data.get('password')
+    ssh_port =  data.get('ssh_port')
+    grpc_port = data.get('grpc_port')
+    keyfile =   data.get('keyfile')
+    password_authentication = data.get('password_authentication') # decides if password or keyfile
+
+    print(hostname,username,password,grpc_port,ssh_port,password_authentication)
     program_name = "traffic_gen"
-    grpc_port = 50052
-    keyfile = "/Users/pascal/.ssh/tofinovm_key"
 
     p4_source = ["src/traffic_gen.p4", "src/util.p4", "src/headers.p4"]
     virtual_switch_processes = ["tofino-model", "bf_switchd"]
     physical_switch_prcesses = ["bf_switchd"]
     project_dir = f"/tmp/{program_name}"
 
-    virtual_switch = True
+    virtual_switch = False
 
-    traffic_configuration = TrafficConfigurator(virtual_switch=True)
-    traffic_configuration.configure_generator(port=68, generation_time_s=15)
-    traffic_configuration.add_virtual_output_port(1)
+    traffic_configuration = TrafficConfigurator(virtual_switch=False)
+    traffic_configuration.configure_generator(port=68, generation_time_s=1)
+    #traffic_configuration.add_virtual_output_port(1)
     traffic_configuration.add_physical_output_port(
-        output_physical_port=1, port_speed="25G"
+        output_physical_port=9, port_speed="25G"
     )
     traffic_configuration.add_packet_data(
         source_cidr="10.1.1.74/24",
         destination_cidr="10.1.1.5/32",
         eth_src="e8:eb:d3:c1:56:e7",
         eth_dst="e8:eb:d3:c1:56:e5",
-        pkt_len=500,
+        pkt_len=60,
     )
-    traffic_configuration.craft_ipv4_packet()
-    traffic_configuration.add_throughput(throughput_mbps=1000, mode="port_shaping")
+    #traffic_configuration.craft_ipv4_packet()
+    #traffic_configuration.craft_icmp_packet()
+    traffic_configuration.craft_tcp_packet()
+    traffic_configuration.add_throughput(throughput_mbps=10000, mode="port_shaping")
     traffic_configuration.generate()
 
     try:
-        ssh_client = ssh_conn(
-            hostname=hostname, username=username, keyfile=keyfile, port=ssh_port
-        )
+        if password_authentication == True: 
+            ssh_client = ssh_conn(
+                hostname=hostname, username=username, password=password, port=ssh_port
+            )
+        else:
+            ssh_client = ssh_conn(
+                hostname=hostname, username=username, keyfile=keyfile, port=ssh_port
+            )
     except Exception:
+        print("SSH connection failed")
         sys.exit(1)
 
     switch = TofinoSwitch(ssh_client, virtual_switch=virtual_switch)
@@ -109,7 +145,7 @@ def main():
         "hdr.timer.packet_id": traffic_configuration.timer_packet_id,
     }
 
-    packet_gen_action_config = {"timer_nanosec": 1}
+    packet_gen_action_config = {"timer_nanosec": 1000}
 
     packet_gen_data_config = {
         "app_enable": False,
